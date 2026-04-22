@@ -51,8 +51,8 @@ function Login() {
       setTimeout(() => navigate("/dashboard"), 500);
 
     } catch (err) {
-      console.log("ERROR:", err);
-      setMessage("Server is starting... wait 10 sec and try again");
+      console.error("Login request failed:", err);
+      setMessage("Server may be starting on Render. Please wait 10 seconds and try again.");
     }
   }
 
@@ -108,7 +108,7 @@ function Signup() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMessage(data.message);
+        setMessage(data.message || "Signup failed");
         return;
       }
 
@@ -117,8 +117,8 @@ function Signup() {
       setTimeout(() => navigate("/"), 800);
 
     } catch (err) {
-      console.log(err);
-      setMessage("Server is starting... try again in 10 sec");
+      console.error("Signup request failed:", err);
+      setMessage("Server may be starting on Render. Please wait 10 seconds and try again.");
     }
   }
 

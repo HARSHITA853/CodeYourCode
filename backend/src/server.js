@@ -29,8 +29,7 @@ const openai = new OpenAI({
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"],
-    credentials: true
+    methods: ["GET", "POST"]
   }
 });
 
@@ -40,8 +39,7 @@ const rooms = {};
 // ✅ FIXED EXPRESS CORS
 app.use(
   cors({
-    origin: "*",
-    credentials: true
+    origin: "*"
   })
 );
 
