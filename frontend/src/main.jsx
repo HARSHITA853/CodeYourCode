@@ -12,8 +12,8 @@ import {
 } from "react-router-dom";
 import "./index.css";
 
-const API_URL = "http://localhost:5000";
-const SOCKET_URL = "http://localhost:5000";
+const API_URL = "https://codeyourcode.onrender.com";
+const SOCKET_URL = "https://codeyourcode.onrender.com";
 
 const starterCode = {
   javascript: `function hello() {
