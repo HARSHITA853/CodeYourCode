@@ -23,17 +23,21 @@ const MONGO_URI =
 
 const JWT_SECRET = process.env.JWT_SECRET || "simple_jwt_secret";
 
+function normalizeOrigin(origin) {
+  return origin?.trim().replace(/\/$/, "");
+}
+
 const defaultAllowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "http://localhost:3000"
-];
+].map(normalizeOrigin);
 
 const envAllowedOrigins = [
-  process.env.FRONTEND_URL,
+  normalizeOrigin(process.env.FRONTEND_URL),
   ...(process.env.ALLOWED_ORIGINS || "")
     .split(",")
-    .map((origin) => origin.trim())
+    .map(normalizeOrigin)
 ].filter(Boolean);
 
 const allowedOrigins = [...new Set([...defaultAllowedOrigins, ...envAllowedOrigins])];
@@ -43,13 +47,15 @@ function isAllowedOrigin(origin) {
     return true;
   }
 
-  if (allowedOrigins.includes(origin)) {
+  const normalizedOrigin = normalizeOrigin(origin);
+
+  if (allowedOrigins.includes(normalizedOrigin)) {
     return true;
   }
 
   return (
     process.env.ALLOW_VERCEL_PREVIEWS === "true" &&
-    /^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)
+    /^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(normalizedOrigin)
   );
 }
 

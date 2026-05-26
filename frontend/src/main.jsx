@@ -12,10 +12,12 @@ import {
 } from "react-router-dom";
 import "./index.css";
 
-const API_URL =
-  import.meta.env.VITE_API_URL || "https://code-yourcode.onrender.com";
-const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL || "https://code-yourcode.onrender.com";
+const API_URL = (
+  import.meta.env.VITE_API_URL || "https://code-yourcode.onrender.com"
+).replace(/\/$/, "");
+const SOCKET_URL = (
+  import.meta.env.VITE_SOCKET_URL || API_URL
+).replace(/\/$/, "");
 
 const starterCode = {
   javascript: `function hello() {
