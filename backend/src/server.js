@@ -14,36 +14,75 @@ dotenv.config();
 const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 5000;
+const JUDGE0_API_URL =
+  process.env.JUDGE0_API_URL || "https://ce.judge0.com/submissions?wait=true";
+const JUDGE0_API_KEY = process.env.JUDGE0_API_KEY;
 
 const MONGO_URI =
   process.env.MONGO_URI || "mongodb://127.0.0.1:27017/simple-mern-auth";
 
 const JWT_SECRET = process.env.JWT_SECRET || "simple_jwt_secret";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const defaultAllowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000"
+];
+
+const envAllowedOrigins = [
+  process.env.FRONTEND_URL,
+  ...(process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+].filter(Boolean);
+
+const allowedOrigins = [...new Set([...defaultAllowedOrigins, ...envAllowedOrigins])];
+
+function isAllowedOrigin(origin) {
+  if (!origin) {
+    return true;
+  }
+
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  return (
+    process.env.ALLOW_VERCEL_PREVIEWS === "true" &&
+    /^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)
+  );
+}
+
+function corsOrigin(origin, callback) {
+  if (isAllowedOrigin(origin)) {
+    callback(null, true);
+    return;
+  }
+
+  callback(new Error(`CORS blocked origin: ${origin}`));
+}
+
+const corsOptions = {
+  origin: corsOrigin,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
 
 
-// ✅ FIXED SOCKET.IO CORS
+// Keep HTTP and Socket.IO CORS aligned for local and deployed frontends.
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+app.use(express.json());
+
+
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: corsOrigin,
     methods: ["GET", "POST"]
   }
 });
 
 const rooms = {};
-
-
-// ✅ FIXED EXPRESS CORS
-app.use(
-  cors({
-    origin: "*"
-  })
-);
-
-app.use(express.json());
 
 
 // ✅ DB CONNECTION
@@ -58,42 +97,56 @@ app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
-
-// ================= AI ROUTE =================
-app.post("/api/ai/chat", async (req, res) => {
+app.post("/run-code", async (req, res) => {
   try {
-    const { message } = req.body;
+    const { source_code, language_id, stdin } = req.body;
 
-    if (!message) {
-      return res.status(400).json({ message: "Message required" });
+    if (!source_code || typeof source_code !== "string") {
+      return res.status(400).json({ message: "source_code is required" });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ message: "OpenAI API key missing" });
+    if (!language_id || typeof language_id !== "number") {
+      return res.status(400).json({ message: "language_id must be a number" });
     }
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a helpful coding assistant. Keep answers simple."
-        },
-        {
-          role: "user",
-          content: message
-        }
-      ]
+    const headers = {
+      "Content-Type": "application/json"
+    };
+
+    if (JUDGE0_API_KEY) {
+      headers["X-Auth-Token"] = JUDGE0_API_KEY;
+    }
+
+    const judgeResponse = await fetch(JUDGE0_API_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        source_code,
+        language_id,
+        stdin: typeof stdin === "string" ? stdin : ""
+      })
     });
 
-    res.json({
-      reply: response.choices[0].message.content
-    });
+    const result = await judgeResponse.json();
 
-  } catch (err) {
-    console.log("AI error:", err.message);
-    res.status(500).json({ message: "AI failed" });
+    if (!judgeResponse.ok) {
+      return res.status(judgeResponse.status).json({
+        message: result.error || result.message || "Code execution failed",
+        details: result
+      });
+    }
+
+    return res.json({
+      stdout: result.stdout,
+      stderr: result.stderr,
+      compile_output: result.compile_output,
+      status: result.status
+    });
+  } catch (error) {
+    console.log("Run code error:", error.message);
+    return res.status(500).json({
+      message: "Could not execute code"
+    });
   }
 });
 
@@ -133,6 +186,7 @@ app.post("/signup", async (req, res) => {
     });
 
   } catch (err) {
+    console.log("Signup error:", err);
     res.status(500).json({ message: "Signup failed" });
   }
 });
@@ -166,6 +220,7 @@ app.post("/login", async (req, res) => {
     });
 
   } catch (err) {
+    console.log("Login error:", err);
     res.status(500).json({ message: "Login failed" });
   }
 });
@@ -190,12 +245,24 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("users", Object.values(rooms[roomId]));
   });
 
-  socket.on("code-change", ({ roomId, code }) => {
-    socket.to(roomId).emit("code-change", code);
+  socket.on("code-change", ({ roomId, fileName, code }) => {
+    socket.to(roomId).emit("code-change", { fileName, code });
+  });
+
+  socket.on("new-file", ({ roomId, fileName }) => {
+    socket.to(roomId).emit("new-file", fileName);
   });
 
   socket.on("typing", ({ roomId, username }) => {
     socket.to(roomId).emit("user-typing", username);
+  });
+
+  socket.on("send-message", ({ roomId, message, username }) => {
+    io.to(roomId).emit("receive-message", {
+      message,
+      username,
+      time: new Date()
+    });
   });
 
   socket.on("disconnect", () => {
